@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>reviewAI Playground</title>
+    <style>
+      :root {
+        --bg: #f4efe4;
+        --panel: rgba(255, 250, 242, 0.92);
+        --ink: #1e1b18;
+        --muted: #6f6255;
+        --accent: #b6482f;
+        --accent-dark: #7d2d1d;
+        --border: rgba(30, 27, 24, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Georgia, "Times New Roman", serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(182, 72, 47, 0.18), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(125, 45, 29, 0.16), transparent 26%),
+          linear-gradient(135deg, #f6f0e5 0%, #efe0c8 100%);
+      }
+
+      main {
+        width: min(960px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 40px 0 56px;
+      }
+
+      .hero {
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(2.6rem, 6vw, 4.6rem);
+        line-height: 0.95;
+        letter-spacing: -0.04em;
+      }
+
+      .subtitle {
+        max-width: 720px;
+        color: var(--muted);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
+
+      .panel {
+        background: var(--panel);
+        backdrop-filter: blur(18px);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: 0 22px 80px rgba(30, 27, 24, 0.12);
+        padding: 22px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 700;
+      }
+
+      textarea,
+      input[type="text"] {
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(30, 27, 24, 0.18);
+        background: rgba(255, 255, 255, 0.92);
+        font: inherit;
+        color: inherit;
+      }
+
+      textarea {
+        min-height: 160px;
+        resize: vertical;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .row {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        margin-top: 16px;
+      }
+
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+      }
+
+      button {
+        margin-top: 18px;
+        border: 0;
+        border-radius: 999px;
+        padding: 14px 20px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+        color: #fffaf4;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      pre {
+        margin: 0;
+        padding: 18px;
+        overflow: auto;
+        border-radius: 18px;
+        background: #1c1815;
+        color: #f8efe1;
+        min-height: 260px;
+        line-height: 1.45;
+      }
+
+      .result {
+        margin-top: 20px;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-top: 10px;
+      }
+
+      .ratings {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
+      .rating-card {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.66);
+      }
+
+      .rating-aspect {
+        margin: 0 0 8px;
+        font-size: 1.05rem;
+        text-transform: capitalize;
+      }
+
+      .rating-value {
+        margin: 0 0 6px;
+        font-size: 2rem;
+        line-height: 1;
+      }
+
+      .rating-detail {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>reviewAI</h1>
+        <p class="subtitle">
+          Standalone demo for the review analysis API. This page posts directly to
+          <code>/analyze-review</code> and renders the strict JSON response.
+        </p>
+      </section>
+
+      <section class="panel grid">
+        <div>
+          <label for="reviewText">Review Text</label>
+          <textarea id="reviewText">The sushi was excellent but the service was slow.</textarea>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="languageHint">Language Hint</label>
+            <input id="languageHint" type="text" placeholder="Optional, ex: en" />
+          </div>
+          <label class="toggle" for="includeRawOutputs">
+            <input id="includeRawOutputs" type="checkbox" checked />
+            Include raw SemEval outputs
+          </label>
+        </div>
+
+        <div>
+          <button id="analyzeButton" type="button">Analyze Review</button>
+          <p class="meta" id="statusText">Ready.</p>
+        </div>
+
+        <div class="result">
+          <div id="ratingsSummary" class="ratings"></div>
+        </div>
+
+        <div class="result">
+          <pre id="resultBox">{}</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const reviewText = document.getElementById("reviewText");
+      const languageHint = document.getElementById("languageHint");
+      const includeRawOutputs = document.getElementById("includeRawOutputs");
+      const analyzeButton = document.getElementById("analyzeButton");
+      const resultBox = document.getElementById("resultBox");
+      const statusText = document.getElementById("statusText");
+      const ratingsSummary = document.getElementById("ratingsSummary");
+
+      function renderRatingsSummary(data) {
+        const outputs = data?.aspect_outputs;
+        if (!outputs) {
+          ratingsSummary.innerHTML = "";
+          return;
+        }
+
+        ratingsSummary.innerHTML = Object.entries(outputs)
+          .map(([aspect, output]) => {
+            const ratingText = output.rating_suggested === null
+              ? "N/A"
+              : `${Number(output.rating_suggested).toFixed(2)} / 5`;
+            const stateText = output.present ? "Present" : "Not detected";
+            return `
+              <article class="rating-card">
+                <h2 class="rating-aspect">${aspect}</h2>
+                <p class="rating-value">${ratingText}</p>
+                <p class="rating-detail">${stateText} · ${output.polarity}</p>
+                <p class="rating-detail">Confidence ${Number(output.confidence).toFixed(2)}</p>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      async function analyzeReview() {
+        analyzeButton.disabled = true;
+        statusText.textContent = "Running model inference...";
+
+        const payload = {
+          review_text: reviewText.value,
+          include_raw_outputs: includeRawOutputs.checked,
+        };
+
+        if (languageHint.value.trim()) {
+          payload.language_hint = languageHint.value.trim();
+        }
+
+        try {
+          const response = await fetch("/analyze-review", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          renderRatingsSummary(response.ok ? data : null);
+          resultBox.textContent = JSON.stringify(data, null, 2);
+          statusText.textContent = response.ok
+            ? "Inference completed."
+            : "Request failed.";
+        } catch (error) {
+          renderRatingsSummary(null);
+          resultBox.textContent = JSON.stringify(
+            { error: { message: String(error) } },
+            null,
+            2
+          );
+          statusText.textContent = "Request failed.";
+        } finally {
+          analyzeButton.disabled = false;
+        }
+      }
+
+      analyzeButton.addEventListener("click", analyzeReview);
+    </script>
+  </body>
+</html>

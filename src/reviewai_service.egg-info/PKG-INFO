@@ -1,0 +1,203 @@
+Metadata-Version: 2.4
+Name: reviewai-service
+Version: 0.1.0
+Summary: Standalone review analysis API backed by a reviewAI-model workspace.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<0.116,>=0.115
+Requires-Dist: pydantic<3.0,>=2.10
+Requires-Dist: uvicorn<1.0,>=0.30
+Provides-Extra: dev
+Requires-Dist: httpx<1.0,>=0.27; extra == "dev"
+Requires-Dist: pytest<9.0,>=8.0; extra == "dev"
+
+# reviewAI
+
+`reviewAI` is a standalone FastAPI service for restaurant review analysis. It loads a configured `reviewAI-model` workspace, runs inference, and exposes a stable HTTP API that any client application can consume.
+
+## What It Does
+
+- accepts free-text restaurant reviews
+- loads the configured `ReviewAIModelWorkspacePredictor`
+- returns strict JSON with model metadata, optional raw SemEval outputs, and public `aspect_outputs`
+- serves a small local playground at `/playground`
+
+## Project Layout
+
+```text
+src/reviewai/
+  app.py
+  server.py
+  config.py
+  logger.py
+  errors.py
+  routes.py
+  handlers/
+  middleware/
+  schemas/
+  services/
+  static/
+tests/
+```
+
+## Requirements
+
+- Python `3.11`
+- access to a compatible `reviewAI-model` workspace and manifest
+- the inference dependencies required by that model workspace available in the Python environment
+
+## Setup
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+cp .env.example .env
+```
+
+Then configure one of the following in `.env`:
+
+- `REVIEWAI_MODEL_ROOT`: path to the `reviewAI-model` workspace root
+- `REVIEWAI_MANIFEST_PATH`: optional explicit path to `final_model_manifest.json`
+
+If `REVIEWAI_MANIFEST_PATH` is not set, the service looks for `artifacts/final_model_manifest.json` under `REVIEWAI_MODEL_ROOT`.
+
+### Standalone Setup Example
+
+```dotenv
+REVIEWAI_MODEL_ROOT=/absolute/path/to/reviewAI-model
+```
+
+### Optional Local Sibling-Repo Setup
+
+Local development still supports keeping `reviewAI` and `reviewAI-model` as sibling folders. If `REVIEWAI_MODEL_ROOT` is left unset, the service falls back to `../reviewAI-model`.
+
+## Run Locally
+
+```bash
+source .venv/bin/activate
+uvicorn reviewai.app:app --host 127.0.0.1 --port 8008 --reload
+```
+
+Or use the module entrypoint:
+
+```bash
+source .venv/bin/activate
+python -m reviewai.server
+```
+
+## API
+
+### `GET /health`
+
+Returns service status and the configured model version from the manifest.
+
+### `POST /analyze-review`
+
+Request body:
+
+```json
+{
+  "review_text": "The sushi was excellent but the service was slow.",
+  "language_hint": null,
+  "include_raw_outputs": true
+}
+```
+
+Example:
+
+```bash
+curl -X POST http://127.0.0.1:8008/analyze-review \
+  -H "Content-Type: application/json" \
+  -d '{
+    "review_text": "The sushi was excellent but the service was slow.",
+    "include_raw_outputs": true
+  }'
+```
+
+Response shape excerpt:
+
+```json
+{
+  "model_version": "two_stage_roberta_base_seed42",
+  "analysis_language": null,
+  "semeval_raw_outputs": {
+    "food": {
+      "present": true,
+      "polarity": "positive",
+      "confidence": 0.7904
+    }
+  },
+  "aspect_outputs": {
+    "food": {
+      "present": true,
+      "polarity": "positive",
+      "confidence": 0.7904,
+      "rating_suggested": 4.44
+    },
+    "ambiance": {
+      "present": false,
+      "polarity": "none",
+      "confidence": 1.0,
+      "rating_suggested": null
+    }
+  }
+}
+```
+
+`rating_suggested` comes from the `reviewAI-model` probability-based calibration layer. It is a derived heuristic rating suggestion, not a directly supervised star-rating regressor.
+
+`aspect_outputs` is the public aspect summary field for integrations.
+
+### `POST /analyze-reviews-batch`
+
+Request body:
+
+```json
+{
+  "reviews": [
+    {"review_text": "The sushi was excellent but the service was slow."},
+    {"review_text": "Great ambiance and fair prices."}
+  ],
+  "include_raw_outputs": false
+}
+```
+
+## Integration
+
+Any consumer application can call this service over HTTP. A typical integration flow is:
+
+- call `POST /analyze-review` or `POST /analyze-reviews-batch`
+- read `aspect_outputs` as the primary aspect summary
+- store or transform the returned JSON in your own domain model
+- optionally use `rating_suggested` as a UI hint, not as ground-truth supervision
+
+The service does not assume any particular frontend, backend, or repository layout beyond access to the configured model workspace.
+
+## Demo
+
+Open [http://127.0.0.1:8008/playground](http://127.0.0.1:8008/playground) after starting the server.
+The playground now shows a compact aspect-rating summary above the raw JSON response.
+
+## Tests
+
+```bash
+source .venv/bin/activate
+pytest
+```
+
+The suite includes:
+
+- `/health` response coverage
+- request validation checks
+- `/analyze-review` response-shape checks
+- an optional real adapter smoke test against a configured `reviewAI-model` workspace
+
+## Intentionally Deferred
+
+- consumer-application-specific integration work
+- model retraining or checkpoint changes
+- language detection and `analysis_language` population
+- multi-sentence review aggregation
+- business rules beyond the model output contract
+- UI work outside this standalone service
